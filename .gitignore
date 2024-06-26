@@ -1,162 +1,145 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from scipy.stats import pearsonr
 
-# C extensions
-*.so
+# Only these columns will be used as dependent variables
+TARGET_FIELDS = ['Quota', 'Enrollment', 'Quota Rate']
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+def trim_string(x):
+    return x.strip()
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+def replace_dash(value):
+    if '--' in value:
+        return np.nan
+    return value
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+def trim_and_replace(value):
+    value = trim_string(value)
+    value = replace_dash(value)
+    return value
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
+# Define the data types for the columns
+data_types = {'Year': int, 'University': str, 'City': str, 'Faculty': str, 'Department': str, 'Language': str,
+              'Quota': int, 'Enrollment': int, 'Base Score': float, 'Ceiling Score': float, 'Quota Rate': float, }
 
-# Translations
-*.mo
-*.pot
+converter_dict = {column: trim_and_replace for column in data_types.keys()}
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+# Read the CSV file with specified data types
+df = pd.read_csv('uniData.csv', converters=converter_dict)
+df = df.astype(data_types)
 
-# Flask stuff:
-instance/
-.webassets-cache
+# Create a dictionary to hold the LabelEncoders for each column
+label_encoders = {}
 
-# Scrapy stuff:
-.scrapy
+# Iterate over each column of type 'object'
+for column in df.select_dtypes(include=[object]).columns:
+    # Create a new LabelEncoder for this column
+    le = LabelEncoder()
 
-# Sphinx documentation
-docs/_build/
+    # Fit and transform the data and store it in the DataFrame
+    df[column] = le.fit_transform(df[column])
 
-# PyBuilder
-.pybuilder/
-target/
+    # Store the LabelEncoder in our dictionary
+    label_encoders[column] = le
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Handle missing values
+# Store the original number of rows
+original_rows = df.shape[0]
 
-# IPython
-profile_default/
-ipython_config.py
+# Drop the NaN values
+df = df.dropna()
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+# Calculate the number of rows after dropping NaN values
+new_rows = df.shape[0]
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+# Calculate the number of rows removed
+rows_removed = original_rows - new_rows
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
+# Calculate the percentage of rows removed
+percentage_removed = (rows_removed / original_rows) * 100
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
-.pdm.toml
-.pdm-python
-.pdm-build/
+# Print the results
+print(f"Number of rows removed: {rows_removed}")
+print(f"Percentage of rows removed: {percentage_removed}%")
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+# Split the data into features and targets
+X = df.drop(TARGET_FIELDS, axis=1)
+y = df[TARGET_FIELDS]
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# SageMath parsed files
-*.sage.py
+# Train a multivariate regression model
+model = RandomForestRegressor(n_estimators=100, random_state=0)
+model.fit(X_train, y_train)
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# Evaluate the model
+y_pred = model.predict(X_test)
+print('Root Mean Squared Error:', np.sqrt(mean_squared_error(y_test, y_pred)))
 
-# Spyder project settings
-.spyderproject
-.spyproject
+mse = mean_squared_error(y_test, y_pred)
+mae = mean_absolute_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
 
-# Rope project settings
-.ropeproject
+print("Mean Squared Error (MSE):", mse)
+print("Mean Absolute Error (MAE):", mae)
+print("R^2 Score:", r2)
+print("Train Accuracy Rate:", model.score(X_train, y_train))
+print("Test Accuracy Rate:", model.score(X_test, y_test))
 
-# mkdocs documentation
-/site
+# Calculate Pearson correlation coefficient for each target variable separately
+pearson_corr = {}
+for i, target_field in enumerate(TARGET_FIELDS):
+    corr, _ = pearsonr(y_test[target_field], y_pred[:, i])
+    pearson_corr[target_field] = corr
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+print("Pearson Correlation Coefficient:")
+for target_field, corr in pearson_corr.items():
+    print(f"{target_field}: {corr}")
 
-# Pyre type checker
-.pyre/
+# Prepare data for 2024 forecast
+data_2024 = df[df['Year'] == 2023].copy()
+data_2024['Year'] = 2024
 
-# pytype static type analyzer
-.pytype/
+# Predict enrollment rate for 2024
+X_2024 = data_2024.drop(TARGET_FIELDS, axis=1)
+y_2024_pred = model.predict(X_2024)
 
-# Cython debug symbols
-cython_debug/
+# Convert the numpy array to a DataFrame
+y_2024_pred_df = pd.DataFrame(y_2024_pred, columns=['2024 Predicted Quota', '2024 Predicted Enrollment', '2024 Predicted Quota Rate'])
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+# Reset the index of data_2024 to match with y_2024_pred_df
+data_2024.reset_index(drop=True, inplace=True)
+
+# Concatenate the predicted values with the data_2024 DataFrame
+data_2024 = pd.concat([data_2024, y_2024_pred_df], axis=1)
+
+# Get the data for 2023
+data_2023 = df[df['Year'] == 2023].copy()
+data_2023 = data_2023[TARGET_FIELDS]
+
+# Reset the index of data_2023 to match with data_2024
+data_2023.reset_index(drop=True, inplace=True)
+
+# Concatenate the 2023 data with the 2024 predicted data
+data_2023_2024 = pd.concat([data_2024, data_2023.add_prefix('2023 ')], axis=1)
+
+# Decode the encoded columns
+for column, encoder in label_encoders.items():
+    if column in data_2023_2024.columns:
+        data_2023_2024[column] = encoder.inverse_transform(data_2023_2024[column])
+
+# Define the desired column order
+column_order = ['University', 'City', 'Faculty', 'Department', 'Language','Base Score','Ceiling Score', '2023 Quota Rate', '2024 Predicted Quota Rate',
+                '2023 Quota', '2024 Predicted Quota', '2023 Enrollment', '2024 Predicted Enrollment']
+
+# Reorder the DataFrame
+data_2023_2024 = data_2023_2024[column_order]
+
+# Save the DataFrame to a CSV file
+data_2023_2024.round(2).to_csv('predicted_uni_data_randomforest2.csv', index=False)
+
